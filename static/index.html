@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HomeKit LIFX Info</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        section { margin-bottom: 2em; padding: 1em; border: 1px solid #eee; border-radius: 5px; }
+        h2 { color: #333; }
+        img { border: 1px solid #ccc; padding: 5px; }
+        form { display: flex; flex-direction: column; width: 300px; }
+        form label { margin-bottom: 0.5em; }
+        form input[type="text"], form select { padding: 0.5em; margin-bottom: 1em; border: 1px solid #ccc; border-radius: 3px; }
+        form button { padding: 0.7em; background-color: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        form button:hover { background-color: #0056b3; }
+        .status-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
+        .status-online { background-color: green; }
+        .status-offline { background-color: red; }
+
+        /* Styles for the new control elements */
+        .light-controls-container {
+            margin-top: 1.5em;
+            padding-top: 1.5em;
+            border-top: 1px solid #eee;
+        }
+        .light-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .control-group label {
+            font-weight: bold;
+            margin-bottom: 0;
+        }
+        input[type="range"] {
+            width: 180px;
+        }
+        input[type="color"] {
+            width: 50px;
+            height: 30px;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+        }
+        .power-toggle {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+        .power-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            -webkit-transition: .4s;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            -webkit-transition: .4s;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #007bff;
+        }
+        input:focus + .slider {
+            box-shadow: 0 0 1px #007bff;
+        }
+        input:checked + .slider:before {
+            -webkit-transform: translateX(26px);
+            -ms-transform: translateX(26px);
+            transform: translateX(26px);
+        }
+    </style>
+</head>
+<body>
+    <h1>HomeKit LIFX Device Information</h1>
+
+    <section>
+        <h2>HomeKit Pairing QR Code</h2>
+        <p>Scan this QR code with your Apple Home app to add the accessory.</p>
+        <img id="qr-code" alt="HomeKit Pairing QR Code" width="250" height="250">
+        <p>Setup Code: <code id="setup-code"></code></p>
+    </section>
+
+    <section>
+        <h2>LIFX API Key</h2>
+        <form id="api-key-form">
+            <label for="apiKey">LIFX API Key:</label>
+            <input type="text" id="apiKeyInput" name="apiKey" placeholder="Enter your LIFX API Key" required>
+            <div style="display: flex; gap: 10px;">
+                <button type="submit">Save Key</button>
+            </div>
+        </form>
+        <div id="light-selection-container" style="display: none;">
+            <form id="homekit-light-form">
+                <label for="homekit-light">Select Light for HomeKit:</label>
+                <select id="homekit-light" name="lightId"></select>
+                <button type="submit">Update HomeKit Device</button>
+            </form>
+
+            <div id="selected-light-controls" class="light-controls-container" style="display: none;">
+                <h3>Selected Light Control</h3>
+                <div class="light-controls">
+                    <div class="control-group">
+                        <label>Power</label>
+                        <label class="power-toggle">
+                            <input type="checkbox" id="power-toggle-switch">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="control-group">
+                        <label for="brightness-control">Brightness</label>
+                        <input type="range" id="brightness-control" min="0" max="1" step="0.01" value="0.5">
+                    </div>
+                    <div class="control-group">
+                        <label for="color-control">Color</label>
+                        <input type="color" id="color-control" value="#ffffff">
+                    </div>
+                    <div class="control-group">
+                        <label for="effect-control">Effect</label>
+                        <select id="effect-control">
+                            <option value="breathe">Breathe</option>
+                            <option value="pulse">Pulse</option>
+                        </select>
+                        <button onclick="setEffect()">Set Effect</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section>
+        <h2>Device Status</h2>
+        <p>LIFX Device Status: <span class="status-indicator status-online"></span> Online (Placeholder)</p>
+        <p>HomeKit Accessory Status: <span class="status-indicator status-online"></span> Online (Placeholder)</p>
+    </section>
+
+    <section>
+        <h2>Console Logs</h2>
+        <div>
+            <label for="auto-refresh-toggle">Auto Refresh:</label>
+            <input type="checkbox" id="auto-refresh-toggle" checked>
+            <label for="refresh-frequency">Refresh Frequency (seconds):</label>
+            <input type="number" id="refresh-frequency" value="3" min="1">
+        </div>
+        <div id="log-output" style="height: 300px; overflow-y: scroll; background-color: #f0f0f0; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.8em;">
+            <!-- Logs will be displayed here -->
+        </div>
+    </section>
+
+    <script>
+        const qrCode = document.getElementById('qr-code');
+        const setupCode = document.getElementById('setup-code');
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        const lightSelectionContainer = document.getElementById('light-selection-container');
+        const homekitLightSelector = document.getElementById('homekit-light');
+        const selectedLightControlsDiv = document.getElementById('selected-light-controls');
+
+        // Control elements
+        const powerToggleSwitch = document.getElementById('power-toggle-switch');
+        const brightnessControl = document.getElementById('brightness-control');
+        const colorControl = document.getElementById('color-control');
+        const effectControl = document.getElementById('effect-control');
+
+        // Log refresh elements
+        const autoRefreshToggle = document.getElementById('auto-refresh-toggle');
+        const refreshFrequencyInput = document.getElementById('refresh-frequency');
+        const logOutputDiv = document.getElementById('log-output');
+
+        let currentLights = [];
+        let selectedHomekitLightId = null;
+        let refreshIntervalId = null;
+
+        async function fetchInfo() {
+            console.log("fetchInfo called");
+            const response = await fetch('/api/info');
+            const info = await response.json();
+
+            qrCode.src = info.qrCodeDataUrl;
+            setupCode.textContent = info.pincode;
+            apiKeyInput.value = info.lifxApiKey ? info.lifxApiKey : '';
+
+            if (info.apiKeyValid && info.lights && info.lights.length > 0) {
+                currentLights = info.lights; // Store lights globally
+                lightSelectionContainer.style.display = 'block';
+                homekitLightSelector.innerHTML = '';
+                info.lights.forEach(light => {
+                    const option = document.createElement('option');
+                    option.value = light.id;
+                    option.textContent = light.label;
+                    if (info.homekitLightId === light.id) {
+                        option.selected = true;
+                        selectedHomekitLightId = light.id; // Set the initially selected HomeKit light
+                    }
+                    homekitLightSelector.appendChild(option);
+                });
+                // After populating, render controls for the selected light if any
+                renderSelectedLightControls();
+            } else {
+                lightSelectionContainer.style.display = 'none';
+                selectedLightControlsDiv.style.display = 'none'; // Hide controls if no valid API key or lights
+                selectedHomekitLightId = null;
+            }
+
+            document.getElementById('app-version').textContent = info.packageJson.version;
+            document.getElementById('matter-version').textContent = info.packageJson.dependencies['@matter/main'] || 'N/A';
+            document.getElementById('express-version').textContent = info.packageJson.dependencies['express'] || 'N/A';
+
+            // Fetch and display logs initially
+            fetchLogs();
+        }
+
+        async function fetchLogs() {
+            console.log("fetchLogs called");
+            const logsResponse = await fetch('/api/logs');
+            const logs = await logsResponse.json();
+            logOutputDiv.innerHTML = ''; // Clear previous logs
+            logs.forEach(log => {
+                const p = document.createElement('p');
+                p.textContent = log.replace(/\u001b\[.*?m/g, ''); // Remove ANSI escape codes
+                logOutputDiv.appendChild(p);
+            });
+            logOutputDiv.scrollTop = logOutputDiv.scrollHeight; // Scroll to bottom
+        }
+
+        function startAutoRefresh() {
+            console.log("startAutoRefresh called");
+            const frequency = parseInt(refreshFrequencyInput.value) * 1000;
+            if (refreshIntervalId) clearInterval(refreshIntervalId);
+            refreshIntervalId = setInterval(fetchLogs, frequency);
+        }
+
+        function stopAutoRefresh() {
+            console.log("stopAutoRefresh called");
+            if (refreshIntervalId) clearInterval(refreshIntervalId);
+            refreshIntervalId = null;
+        }
+
+        // Event Listeners for auto-refresh
+        autoRefreshToggle.addEventListener('change', () => {
+            if (autoRefreshToggle.checked) {
+                startAutoRefresh();
+            } else {
+                stopAutoRefresh();
+            }
+        });
+
+        refreshFrequencyInput.addEventListener('change', () => {
+            if (autoRefreshToggle.checked) {
+                startAutoRefresh(); // Restart with new frequency
+            }
+        });
+
+        // Initial setup
+        fetchInfo();
+        if (autoRefreshToggle.checked) {
+            startAutoRefresh();
+        }
+
+        async function renderSelectedLightControls() {
+            const lightIdToControl = homekitLightSelector.value;
+            if (!lightIdToControl) {
+                selectedLightControlsDiv.style.display = 'none';
+                return;
+            }
+
+            const light = currentLights.find(l => l.id === lightIdToControl);
+            if (light) {
+                selectedLightControlsDiv.style.display = 'block';
+                powerToggleSwitch.checked = light.power === 'on';
+                brightnessControl.value = light.brightness;
+                colorControl.value = kelvinToHex(light.color.kelvin);
+                // Effect dropdown doesn't have a specific 'value' to set based on current state easily
+            } else {
+                selectedLightControlsDiv.style.display = 'none';
+            }
+        }
+
+        async function togglePower() {
+            const lightId = homekitLightSelector.value;
+            if (!lightId) return;
+
+            const newState = powerToggleSwitch.checked ? 'on' : 'off';
+            await fetch('/api/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: 'set_state', selector: lightId, state: { power: newState } })
+            });
+            // Update the local light state without a full page refresh
+            const light = currentLights.find(l => l.id === lightId);
+            if (light) light.power = newState;
+        }
+
+        async function setBrightness() {
+            const lightId = homekitLightSelector.value;
+            if (!lightId) return;
+
+            await fetch('/api/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: 'set_state', selector: lightId, state: { brightness: parseFloat(brightnessControl.value) } })
+            });
+            const light = currentLights.find(l => l.id === lightId);
+            if (light) light.brightness = parseFloat(brightnessControl.value);
+        }
+
+        async function setColor() {
+            const lightId = homekitLightSelector.value;
+            if (!lightId) return;
+
+            await fetch('/api/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: 'set_state', selector: lightId, state: { color: colorControl.value } })
+            });
+            const light = currentLights.find(l => l.id === lightId);
+            if (light && light.color) light.color.kelvin = hexToKelvin(colorControl.value); // Simplified update
+        }
+
+        async function setEffect() {
+            const lightId = homekitLightSelector.value;
+            if (!lightId) return;
+
+            const effect = effectControl.value;
+            await fetch('/api/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: 'effect', selector: lightId, effect: effect })
+            });
+        }
+
+        function kelvinToHex(kelvin) {
+            // This is a simplified conversion and might not be accurate
+            // A more robust conversion is complex and would require a proper color library
+            // For now, let's just make an educated guess or default.
+            // LIFX color temperature range is often 1500K to 9000K
+            if (kelvin < 2000) return "#ffc080"; // Very warm
+            if (kelvin < 3000) return "#ffddaf"; // Warm white
+            if (kelvin < 4000) return "#fff4e5"; // Neutral white
+            if (kelvin < 5500) return "#fefeff"; // Cool white
+            return "#e0f0ff"; // Very cool / bluish
+        }
+
+        function hexToKelvin(hex) {
+             // This is an even more simplified conversion back to Kelvin, just for local UI update
+             // A real conversion requires complex math or lookup tables.
+             // This is just a placeholder to keep the data consistent locally.
+             const r = parseInt(hex.substring(1,3), 16);
+             const g = parseInt(hex.substring(3,5), 16);
+             const b = parseInt(hex.substring(5,7), 16);
+
+             // Very rough estimation, not accurate but gives a visual change.
+             if (r > 200 && g > 200 && b > 200) return 5500; // White-ish
+             if (r > 200 && g > 150) return 3000; // Warm-ish
+             if (b > 200) return 7000; // Cool-ish
+             return 4000; // Default
+        }
+
+        // Event Listeners
+        homekitLightSelector.addEventListener('change', renderSelectedLightControls);
+        powerToggleSwitch.addEventListener('change', togglePower);
+        brightnessControl.addEventListener('input', setBrightness); // 'input' for continuous update
+        colorControl.addEventListener('change', setColor); // 'change' for when color picker is closed
+
+        const apiKeyForm = document.getElementById('api-key-form');
+        apiKeyForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const apiKey = apiKeyInput.value;
+            await fetch('/api/update-api-key', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ apiKey })
+            });
+            location.reload();
+        });
+
+        const homekitLightForm = document.getElementById('homekit-light-form');
+        homekitLightForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const lightId = homekitLightSelector.value;
+            await fetch('/api/set-homekit-light', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lightId })
+            });
+            location.reload();
+        });
+
+        // Initial fetch
+        fetchInfo();
+    </script>
+</body>
+</html>

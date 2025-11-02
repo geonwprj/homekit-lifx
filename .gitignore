@@ -1,0 +1,28 @@
+# Node.js
+node_modules/
+dist/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+
+# macOS
+.DS_Store
+
+# Backups and temporary files
+*.backup
+*.bak
+
+# Testing
+*.test.js
+*.test.ts
+coverage/
+
+# Config files (as requested)
+config.json
+*_config.json
