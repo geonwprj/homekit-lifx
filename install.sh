@@ -48,7 +48,7 @@ fi
 
 # --- 3. Install Dependencies and Build Project ---
 echo "Installing dependencies and building project..."
-sudo bash -c "cd $PROJECT_DIR && npm install && npm run build"
+sudo bash -c "cd $PROJECT_DIR && npm install --production && npm run build"
 
 # --- 4. Create default config.json if it doesn't exist ---
 CONFIG_FILE="$PROJECT_DIR/config.json"
@@ -80,7 +80,7 @@ Description=HomeKit LIFX Bridge Service
 After=network.target
 
 [Service]
-ExecStart=/usr/bin/node $PROJECT_DIR/dist/src/index.js
+ExecStart=/usr/bin/node --max-old-space-size=512 $PROJECT_DIR/dist/src/index.js
 WorkingDirectory=$PROJECT_DIR
 StandardOutput=inherit
 StandardError=inherit
