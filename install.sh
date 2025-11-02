@@ -37,6 +37,27 @@ fi
 
 echo "Node.js and npm found."
 
+# --- Check for Git installation ---
+echo "Checking for Git..."
+if ! command -v git &> /dev/null; then
+    echo "Git is not installed. Attempting to install for Ubuntu..."
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        if [ "$ID" = "ubuntu" ]; then
+            sudo apt-get update
+            sudo apt-get install -y git
+            echo "Git installed successfully."
+        else
+            echo "Detected non-Ubuntu OS. Please install Git manually."
+            exit 1
+        fi
+    else
+        echo "Could not detect OS. Please install Git manually."
+        exit 1
+    fi
+fi
+echo "Git found."
+
 # --- 2. Clone Repository ---
 echo "Cloning repository to $PROJECT_DIR..."
 if [ -d "$PROJECT_DIR" ]; then
