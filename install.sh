@@ -58,6 +58,16 @@ if ! command -v git &> /dev/null; then
 fi
 echo "Git found."
 
+# --- Check for tsc installation ---
+echo "Checking for tsc..."
+if ! command -v tsc &> /dev/null; then
+    echo "tsc is not found. Attempting to install TypeScript globally..."
+    sudo npm install -g typescript
+    echo "TypeScript installed globally."
+else
+    echo "tsc found."
+fi
+
 # --- 2. Clone Repository ---
 echo "Cloning repository to $PROJECT_DIR..."
 if [ -d "$PROJECT_DIR" ]; then
