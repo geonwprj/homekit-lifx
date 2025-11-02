@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "npm run build && node dist/src/index.js",
-    "build": "tsc && cp -r static dist/ && cp package.json dist/",
+    "build": "NODE_OPTIONS=--max_old_space_size=512 ./node_modules/.bin/tsc && cp -r static dist/ && cp package.json dist/",
     "dev": "ts-node-dev src/index.ts"
   },
   "keywords": [],
