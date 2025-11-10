@@ -1,7 +1,7 @@
 // src/index.ts
 import { DeviceTypeId, Endpoint, Environment, Logger, ServerNode, StorageService, Time, VendorId } from "@matter/main";
 import { ExtendedColorLightDevice } from "@matter/main/devices";
-import { ConsoleLogger } from "./ConsoleLogger.js";
+import { ConsoleLogger } from "./ConsoleLogger";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import express from 'express';
@@ -50,6 +50,7 @@ const defaultConfig: Config = {
 let currentConfig: Config = { ...defaultConfig };
 let matterServer: ServerNode | null = null;
 let matterEndpoint: Endpoint<ExtendedColorLightDevice> | null = null;
+let isSyncingFromLifx = false;
 
 // --- Configuration Management ---
 function loadConfig(): void {
@@ -85,6 +86,26 @@ async function getLifxLights(apiKey: string): Promise<any[]> {
     } catch (error) {
         logger.error(`Error fetching LIFX lights: ${error}`);
         return [];
+    }
+}
+
+async function getLifxLightState(apiKey: string, selector: string): Promise<any | null> {
+    if (!apiKey || !selector) return null;
+    try {
+        const response = await fetch(`https://api.lifx.com/v1/lights/${selector}`, {
+            headers: {
+                'Authorization': `Bearer ${apiKey}`
+            }
+        });
+        if (!response.ok) {
+            logger.error(`LIFX API error getting state for ${selector}: ${response.statusText}`);
+            return null;
+        }
+        const lights = await response.json();
+        return lights[0] ?? null; // The API returns an array even for a single selector
+    } catch (error) {
+        logger.error(`Error fetching LIFX light state for ${selector}: ${error}`);
+        return null;
     }
 }
 
@@ -146,6 +167,74 @@ async function triggerLifxEffect(apiKey: string, selector: string, effect: strin
     }
 }
 
+// --- Matter <-> LIFX State Sync ---
+const POLLING_INTERVAL_MS = 10000; // 10 seconds
+
+function updateMatterEndpointFromLifx(lifxState: any) {
+    if (!matterEndpoint || !lifxState) return;
+
+    logger.info(`Syncing LIFX state to Matter: ${JSON.stringify(lifxState)}`);
+
+    isSyncingFromLifx = true;
+    try {
+        // const clusterServers = matterEndpoint.getAllClusterServers();
+        //
+        // for (const clusterServer of clusterServers) {
+        //     // OnOff Cluster (ID: 0x0006)
+        //     if (clusterServer.id === 0x0006) {
+        //         const onOffCluster = clusterServer as any;
+        //         const isLifxOn = lifxState.power === 'on';
+        //         if (onOffCluster.getOnOffAttribute() !== isLifxOn) {
+        //             logger.info(`Updating Matter OnOff state to ${isLifxOn}`);
+        //             onOffCluster.setOnOffAttribute(isLifxOn);
+        //         }
+        //     }
+        //
+        //     // LevelControl Cluster (ID: 0x0008)
+        //     if (clusterServer.id === 0x0008) {
+        //         const levelControlCluster = clusterServer as any;
+        //         const matterBrightness = Math.round(lifxState.brightness * 254);
+        //         if (levelControlCluster.getCurrentLevelAttribute() !== matterBrightness) {
+        //             logger.info(`Updating Matter brightness level to ${matterBrightness}`);
+        //             levelControlCluster.setCurrentLevelAttribute(matterBrightness);
+        //         }
+        //     }
+        //
+        //     // ColorControl Cluster (ID: 0x0300)
+        //     if (clusterServer.id === 0x0300) {
+        //         const colorControlCluster = clusterServer as any;
+        //         if (lifxState.color) {
+        //             const kelvin = lifxState.color.kelvin;
+        //             if (kelvin) {
+        //                 const mireds = Math.round(1000000 / kelvin);
+        //                 if (colorControlCluster.getColorTemperatureMiredsAttribute() !== mireds) {
+        //                     logger.info(`Updating Matter color temperature to ${mireds} mireds`);
+        //                     colorControlCluster.setColorTemperatureMiredsAttribute(mireds);
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
+    } finally {
+        isSyncingFromLifx = false;
+    }
+}
+
+async function pollLifxAndUpdateMatter() {
+    if (currentConfig.lifxApiKey && currentConfig.homekitLightId && matterEndpoint) {
+        logger.info("Polling LIFX for status...");
+        const lifxState = await getLifxLightState(currentConfig.lifxApiKey, currentConfig.homekitLightId);
+        if (lifxState) {
+            updateMatterEndpointFromLifx(lifxState);
+        }
+    }
+}
+
+function startPolling() {
+    setInterval(pollLifxAndUpdateMatter, POLLING_INTERVAL_MS);
+    logger.info(`Started polling LIFX status every ${POLLING_INTERVAL_MS / 1000} seconds.`);
+}
+
 // --- Matter Device Setup ---
 async function setupMatterDevice() {
     if (matterServer) {
@@ -192,6 +281,8 @@ async function setupMatterDevice() {
     });
     await matterServer.add(matterEndpoint);
 
+    console.log('matterEndpoint object:', matterEndpoint);
+
     // Event handlers for HomeKit (Matter) changes
     matterEndpoint.events.identify.startIdentifying.on(() => {
         console.log(`Run identify logic for HomeKit ...`);
@@ -206,6 +297,7 @@ async function setupMatterDevice() {
     });
 
     matterEndpoint.events.onOff.onOff$Changed.on(async (value: boolean) => {
+        if (isSyncingFromLifx) return;
         console.log(`Matter OnOff is now ${value ? "ON" : "OFF"}`);
         if (matterEndpoint) {
             console.log(`Color mode is: ${matterEndpoint.state.colorControl.colorMode}`);
@@ -218,6 +310,7 @@ async function setupMatterDevice() {
     });
 
     matterEndpoint.events.levelControl.currentLevel$Changed.on(async (value: number | null) => {
+        if (isSyncingFromLifx) return;
         console.log(`Matter Level is now ${value}`);
         if (value !== null && currentConfig.lifxApiKey && currentConfig.homekitLightId) {
             await controlLifxLight(currentConfig.lifxApiKey, currentConfig.homekitLightId, { brightness: value / 254 });
@@ -227,6 +320,7 @@ async function setupMatterDevice() {
     });
 
     matterEndpoint.events.colorControl.colorTemperatureMireds$Changed.on(async (value: number | null) => {
+        if (isSyncingFromLifx) return;
         console.log(`Matter Color Temperature is now ${value}`);
         if (value !== null && currentConfig.lifxApiKey && currentConfig.homekitLightId) {
             await controlLifxLight(currentConfig.lifxApiKey, currentConfig.homekitLightId, { kelvin: Math.round(1000000 / value) });
@@ -236,6 +330,7 @@ async function setupMatterDevice() {
     });
 
     matterEndpoint.events.colorControl.currentX$Changed.on(async (value: number | null) => {
+        if (isSyncingFromLifx) return;
         console.log(`Matter X is now ${value}`);
         if (matterEndpoint && value !== null && currentConfig.lifxApiKey && currentConfig.homekitLightId) {
             const y = matterEndpoint.state.colorControl.currentY;
@@ -246,6 +341,7 @@ async function setupMatterDevice() {
     });
 
     matterEndpoint.events.colorControl.currentY$Changed.on(async (value: number | null) => {
+        if (isSyncingFromLifx) return;
         console.log(`Matter Y is now ${value}`);
         if (matterEndpoint && value !== null && currentConfig.lifxApiKey && currentConfig.homekitLightId) {
             const x = matterEndpoint.state.colorControl.currentX;
@@ -269,6 +365,8 @@ async function main() {
         setupMatterDevice(),
         startWebServer(consoleLogger)
     ]);
+
+    startPolling(); // Start polling for LIFX state changes
 
     consoleLogger.stop();
 }
